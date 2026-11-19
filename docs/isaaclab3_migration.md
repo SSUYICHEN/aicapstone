@@ -62,8 +62,11 @@ error, it silently produces wrong orientations.
 
 1. `docker build` of `Dockerfile.isaac6` and `pip` dependency resolution (Isaac Lab pins `transformers==5.10.4`;
    lerobot extras that need `transformers<5.6`, e.g. smolvla/pi, will conflict. The diffusion policy should not).
-2. `--enable_cameras` / `--headless` flags: Isaac Lab 3.0 auto-enables cameras when the scene has camera sensors and the
-   docs say the flag was removed. The scripts and docs still pass `--enable_cameras`; confirm argparse still accepts it.
+2. `--enable_cameras` / `--headless` flags: **verified on a GPU machine (driver 595.112.07, L40S)**: Isaac Lab 3.0's launcher
+   no longer defines them, so `generate.py --enable_cameras` failed with `unrecognized arguments`. Cameras are now enabled
+   automatically when the scene has camera sensors. The three scripts accept `--enable_cameras` as a deprecated no-op so
+   existing commands and docs keep working; you can simply omit it. `--headless` is gone as well (no window is opened
+   without a visualizer).
 3. `scripts/rollout.py` uses `omni.kit.viewport.utility` / `omni.ui` (Kit modules); confirm they exist in Isaac Sim 6.
 4. `lerobot` 0.6.1 symbols used by `rollout.py` (`policies.factory`, `policies.utils`, `async_inference.helpers`,
    `utils.constants`) and the dataset format written by `LeRobotDataset`; host-side training must read what the

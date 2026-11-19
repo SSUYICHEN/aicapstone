@@ -130,6 +130,16 @@ parser.add_argument(
 )
 
 AppLauncher.add_app_launcher_args(parser)
+# Isaac Lab 3.0 removed --enable_cameras (cameras are enabled automatically when the scene has camera sensors).
+# Keep accepting it as a no-op so existing commands and docs keep working.
+try:
+    parser.add_argument(
+        "--enable_cameras",
+        action="store_true",
+        help="Deprecated: accepted for backward compatibility; Isaac Lab 3.0 enables cameras automatically.",
+    )
+except argparse.ArgumentError:
+    pass
 args_cli = parser.parse_args()
 
 app_launcher = AppLauncher(vars(args_cli))
