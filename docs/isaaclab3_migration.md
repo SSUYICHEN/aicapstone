@@ -62,11 +62,13 @@ error, it silently produces wrong orientations.
 
 1. `docker build` of `Dockerfile.isaac6` and `pip` dependency resolution (Isaac Lab pins `transformers==5.10.4`;
    lerobot extras that need `transformers<5.6`, e.g. smolvla/pi, will conflict. The diffusion policy should not).
-2. `--enable_cameras` / `--headless` flags: **verified on a GPU machine (driver 595.112.07, L40S)**: Isaac Lab 3.0's launcher
-   no longer defines them, so `generate.py --enable_cameras` failed with `unrecognized arguments`. Cameras are now enabled
-   automatically when the scene has camera sensors. The three scripts accept `--enable_cameras` as a deprecated no-op so
-   existing commands and docs keep working; you can simply omit it. `--headless` is gone as well (no window is opened
-   without a visualizer).
+2. `--enable_cameras` / `--headless` flags: **verified on a GPU machine (driver 595.112.07, L40S)**. Isaac Lab 3.0's launcher
+   no longer defines them, so `generate.py --enable_cameras` failed with `unrecognized arguments`. However, the flag
+   still matters: the Kit launcher uses it to choose the rendering experience, and the automatic camera detection only
+   exists in the new `launch_simulation(cfg, ...)` API, not in the deprecated `AppLauncher` the scripts use. Without it
+   Kit starts without the RTX renderer and camera creation fails (`unable to find match factory for engine: rtx`,
+   `Unable to create prim for graph at /Render/PostProcess/SDGPipeline`). The three scripts therefore enable cameras by
+   default and still accept `--enable_cameras`. `--headless` is gone as well (no window opens without a visualizer).
 3. `scripts/rollout.py` uses `omni.kit.viewport.utility` / `omni.ui` (Kit modules); confirm they exist in Isaac Sim 6.
 4. `lerobot` 0.6.1 symbols used by `rollout.py` (`policies.factory`, `policies.utils`, `async_inference.helpers`,
    `utils.constants`) and the dataset format written by `LeRobotDataset`; host-side training must read what the

@@ -130,13 +130,15 @@ parser.add_argument(
 )
 
 AppLauncher.add_app_launcher_args(parser)
-# Isaac Lab 3.0 removed --enable_cameras (cameras are enabled automatically when the scene has camera sensors).
-# Keep accepting it as a no-op so existing commands and docs keep working.
+# Isaac Lab 3.0's launcher no longer defines --enable_cameras. It picks the Kit experience (with or without the RTX
+# renderer) from this setting, and only auto-detects cameras for the new launch_simulation(cfg, ...) API, not for the
+# deprecated AppLauncher used here. All HCIS tasks use cameras, so always enable them; the flag is still accepted.
 try:
     parser.add_argument(
         "--enable_cameras",
         action="store_true",
-        help="Deprecated: accepted for backward compatibility; Isaac Lab 3.0 enables cameras automatically.",
+        default=True,
+        help="Enable camera rendering (always on: all HCIS tasks use cameras). Kept for backward compatibility.",
     )
 except argparse.ArgumentError:
     pass
