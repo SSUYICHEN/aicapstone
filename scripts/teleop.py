@@ -158,8 +158,8 @@ def _apply_episode_poses(env, poses):
             device=device,
             dtype=torch.float32,
         ).repeat(env.num_envs, 1)
-        obj.write_root_pose_to_sim(pose_tensor)
-        w, x, y, z = quat
+        obj.write_root_pose_to_sim_index(root_pose=pose_tensor)
+        x, y, z, w = quat  # Isaac Lab 3.x quaternion order is (x, y, z, w)
         yaw_deg = _math.degrees(_math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
         print(
             f"  [pose] {name}: pos=({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) "
@@ -198,8 +198,14 @@ def main():  # noqa: C901
         print(f"Loaded {len(episodes)} replay episodes from {args_cli.object_poses}")
 
     if args_cli.quality:
-        env_cfg.sim.render.antialiasing_mode = "FXAA"
-        env_cfg.sim.render.rendering_mode = "quality"
+        # Isaac Lab 3.x removed ``env_cfg.sim.render``; RTX settings are now carried by each camera's renderer_cfg.
+        # NOTE: the old ``rendering_mode = "quality"`` preset has no direct equivalent, only anti-aliasing is applied.
+        from isaaclab_tasks.utils.presets import set_isaac_rtx_global_settings
+
+        for _cam_name in ("wrist", "front"):
+            _cam_cfg = getattr(env_cfg.scene, _cam_name, None)
+            if _cam_cfg is not None:
+                set_isaac_rtx_global_settings(_cam_cfg.renderer_cfg, antialiasing_mode="FXAA")
 
     # precheck task and teleop device
     if "BiArm" in task_name:

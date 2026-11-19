@@ -31,7 +31,7 @@ DININGTABLE_USD = str(
     ASSETS_ROOT / "scenes" / "dining_table_0000" / "dining_table.usd"
 )
 DININGTABLE_WORLD_POS: tuple[float, float, float] = (7.0, 3.5, 0.354)
-DININGTABLE_WORLD_ROT: tuple[float, float, float, float] = ( 0.70711, 0.0, 0.0, -0.70711)
+DININGTABLE_WORLD_ROT: tuple[float, float, float, float] = (0.0, 0.0, -0.70711, 0.70711)  # (x, y, z, w)
 
 TAG_TO_OBJECT: dict[int, str] = {2: "knife", 3: "fork"}
 ANCHOR_TAG_ID: int = 0
@@ -79,7 +79,7 @@ class CutleryArrangementSceneCfg(SingleArmFrankaTaskSceneCfg):
         prim_path="{ENV_REGEX_NS}/Scene/plate",
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=PLATE_WORLD_POS,
-            rot=(1.0, 0.0, 0.0, 0.0),
+            rot=(0.0, 0.0, 0.0, 1.0),
         ),
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(DINING_OBJECTS_ROOT / "Plate" / "plate.usd"),
@@ -93,7 +93,7 @@ class CutleryArrangementSceneCfg(SingleArmFrankaTaskSceneCfg):
             usd_path=str(DINING_OBJECTS_ROOT / "Knife" / "knife.usd"),
             mass_props=MassPropertiesCfg(mass=0.1),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(6.8, 3.05, 0.75), rot=(0.0, 0.0, 0.0, 1.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(6.8, 3.05, 0.75), rot=(0.0, 0.0, 1.0, 0.0)),
     )
 
     fork: RigidObjectCfg = RigidObjectCfg(
@@ -102,7 +102,7 @@ class CutleryArrangementSceneCfg(SingleArmFrankaTaskSceneCfg):
             usd_path=str(DINING_OBJECTS_ROOT / "Fork" / "fork.usd"),
             mass_props=MassPropertiesCfg(mass=0.1),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(7.1, 3.0, 0.75), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(7.1, 3.0, 0.75), rot=(0.0, 0.0, 0.0, 1.0)),
     )
 
 
@@ -118,9 +118,9 @@ def cutlery_arranged(
     fork: RigidObject = env.scene[fork_cfg.name]
     knife: RigidObject = env.scene[knife_cfg.name]
 
-    plate_pos = plate.data.root_pos_w - env.scene.env_origins
-    fork_pos = fork.data.root_pos_w - env.scene.env_origins
-    knife_pos = knife.data.root_pos_w - env.scene.env_origins
+    plate_pos = plate.data.root_pos_w.torch - env.scene.env_origins
+    fork_pos = fork.data.root_pos_w.torch - env.scene.env_origins
+    knife_pos = knife.data.root_pos_w.torch - env.scene.env_origins
 
     done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
 
@@ -171,13 +171,13 @@ class CutleryArrangementEnvCfg(SingleArmFrankaTaskEnvCfg):
         self.dynamic_reset_gripper_effort_limit = False
 
         self.scene.robot.init_state.pos = (7.0, 2.4, 0.6)
-        self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, 0.707)
+        self.scene.robot.init_state.rot = (0.0, 0.0, 0.707, 0.707)
 
 
         # Per-task front camera: pos (7.05,4.5,1.6), aimed at table workspace
-        # (7,3.5,~1.05). rot computed as opengl look-at quaternion (w,x,y,z).
+        # (7,3.5,~1.05). rot computed as opengl look-at quaternion (x,y,z,w).
         self.scene.front.offset.pos = (7.05, 4.77904, 1.16108)
-        self.scene.front.offset.rot = (0.00747, 0.00888, 0.64418, 0.76479)
+        self.scene.front.offset.rot = (0.00888, 0.64418, 0.76479, 0.00747)
         self.scene.front.offset.convention = "opengl"
         self.scene.front.spawn.focal_length = 55
 

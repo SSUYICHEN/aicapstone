@@ -208,8 +208,8 @@ def _apply_episode_poses(env, poses):
             device=device,
             dtype=torch.float32,
         ).repeat(env.num_envs, 1)
-        obj.write_root_pose_to_sim(pose_tensor)
-        w, x, y, z = quat
+        obj.write_root_pose_to_sim_index(root_pose=pose_tensor)
+        x, y, z, w = quat  # Isaac Lab 3.x quaternion order is (x, y, z, w)
         yaw_deg = _math.degrees(_math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
         print(
             f"  [pose] {name}: pos=({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) "
@@ -261,7 +261,7 @@ def _any_object_fell(env, object_names, z_threshold: float) -> bool:
             obj = env.scene[name]
         except KeyError:
             continue
-        if torch.any(obj.data.root_pos_w[:, 2] < z_threshold).item():
+        if torch.any(obj.data.root_pos_w.torch[:, 2] < z_threshold).item():
             return True
     return False
 

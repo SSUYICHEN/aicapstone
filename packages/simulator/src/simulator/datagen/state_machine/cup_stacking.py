@@ -74,7 +74,8 @@ def _clamp_delta(delta: torch.Tensor, max_norm: float = _MAX_CARTESIAN_DELTA) ->
 
 
 def _shortest_quat(quat: torch.Tensor) -> torch.Tensor:
-    return torch.where(quat[:, 0:1] < 0.0, -quat, quat)
+    # Isaac Lab 3.x quaternion order is (x, y, z, w): the scalar part is the last component.
+    return torch.where(quat[:, 3:4] < 0.0, -quat, quat)
 
 
 def _find_body_index(robot, body_name: str) -> int:
@@ -178,8 +179,8 @@ class CupStackingStateMachine(StateMachineBase):
 
     def check_success(self, env) -> bool:
         """Return True when the blue cup is centered over and above the pink cup."""
-        blue_cup_pos = env.scene[_BLUE_CUP_NAME].data.root_pos_w - env.scene.env_origins
-        pink_cup_pos = env.scene[_PINK_CUP_NAME].data.root_pos_w - env.scene.env_origins
+        blue_cup_pos = env.scene[_BLUE_CUP_NAME].data.root_pos_w.torch - env.scene.env_origins
+        pink_cup_pos = env.scene[_PINK_CUP_NAME].data.root_pos_w.torch - env.scene.env_origins
 
         done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
         done = torch.logical_and(done, blue_cup_pos[:, 0] < pink_cup_pos[:, 0] + _SUCCESS_X_RANGE[1])
@@ -195,8 +196,8 @@ class CupStackingStateMachine(StateMachineBase):
         robot = env.scene["robot"]
         robot.write_joint_damping_to_sim(damping=10.0)
 
-        blue_cup_pos_w = env.scene[_BLUE_CUP_NAME].data.root_pos_w.clone()
-        pink_cup_pos_w = env.scene[_PINK_CUP_NAME].data.root_pos_w.clone()
+        blue_cup_pos_w = env.scene[_BLUE_CUP_NAME].data.root_pos_w.torch.clone()
+        pink_cup_pos_w = env.scene[_PINK_CUP_NAME].data.root_pos_w.torch.clone()
 
         device = env.device
         num_envs = env.num_envs
@@ -206,7 +207,7 @@ class CupStackingStateMachine(StateMachineBase):
             if self._event == 0:
                 self._initial_ee_pos_w = self._ee_pos_w(robot).clone()
 
-        target_quat_w = self._gripper_down_quat_w(robot, num_envs, device, robot.data.root_quat_w.dtype)
+        target_quat_w = self._gripper_down_quat_w(robot, num_envs, device, robot.data.root_quat_w.torch.dtype)
         if self._event == 0:
             target_pos_w, gripper_cmd = self._phase_move_above_target(blue_cup_pos_w, num_envs, device)
         elif self._event == 1:
@@ -295,11 +296,11 @@ class CupStackingStateMachine(StateMachineBase):
     # ------------------------------------------------------------------
     def _ee_pos_w(self, robot) -> torch.Tensor:
         body_idx = self._ee_body_idx if self._ee_body_idx >= 0 else -1
-        return robot.data.body_pos_w[:, body_idx, :]
+        return robot.data.body_pos_w.torch[:, body_idx, :]
 
     def _ee_quat_w(self, robot) -> torch.Tensor:
         body_idx = self._ee_body_idx if self._ee_body_idx >= 0 else -1
-        return robot.data.body_quat_w[:, body_idx, :]
+        return robot.data.body_quat_w.torch[:, body_idx, :]
 
     def _joint_position_franka_action(
         self,
@@ -309,8 +310,8 @@ class CupStackingStateMachine(StateMachineBase):
         gripper_cmd: torch.Tensor,
     ) -> torch.Tensor:
         robot = env.scene["robot"]
-        root_pos_w = robot.data.root_pos_w
-        root_quat_w = robot.data.root_quat_w
+        root_pos_w = robot.data.root_pos_w.torch
+        root_quat_w = robot.data.root_quat_w.torch
         root_quat_inv = quat_inv(root_quat_w)
 
         target_pos_root = quat_apply(root_quat_inv, target_pos_w - root_pos_w)
@@ -331,16 +332,16 @@ class CupStackingStateMachine(StateMachineBase):
     def _arm_joint_pos(self, robot) -> torch.Tensor:
         if not self._arm_joint_ids:
             raise RuntimeError("CupStackingStateMachine.setup() must run before requesting actions.")
-        return robot.data.joint_pos[:, self._arm_joint_ids]
+        return robot.data.joint_pos.torch[:, self._arm_joint_ids]
 
     def _ee_jacobian_root(self, robot) -> torch.Tensor:
         if self._jacobi_body_idx < 0 or not self._jacobi_joint_ids:
             raise RuntimeError("CupStackingStateMachine.setup() must run before requesting actions.")
 
-        jacobian = robot.root_physx_view.get_jacobians()[
+        jacobian = robot.data.body_link_jacobian_w.torch[
             :, self._jacobi_body_idx, :, self._jacobi_joint_ids
-        ].clone()
-        root_rot_matrix = matrix_from_quat(quat_inv(robot.data.root_quat_w))
+        ].clone()  # Isaac Lab 3.x: public data property replaces root_physx_view
+        root_rot_matrix = matrix_from_quat(quat_inv(robot.data.root_quat_w.torch))
         jacobian[:, :3, :] = torch.bmm(root_rot_matrix, jacobian[:, :3, :])
         jacobian[:, 3:, :] = torch.bmm(root_rot_matrix, jacobian[:, 3:, :])
         return jacobian

@@ -70,7 +70,7 @@ class SingleArmFrankaTaskSceneCfg(InteractiveSceneCfg):
 
     wrist: TiledCameraCfg = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_hand/wrist",
-        offset=TiledCameraCfg.OffsetCfg(pos=(0.04, 0.0, 0.0), rot=(0.707, 0, 0, 0.707), convention="ros"),
+        offset=TiledCameraCfg.OffsetCfg(pos=(0.04, 0.0, 0.0), rot=(0, 0, 0.707, 0.707), convention="ros"),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24,
@@ -98,7 +98,7 @@ class SingleArmFrankaTaskSceneCfg(InteractiveSceneCfg):
     front: TiledCameraCfg = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/front_camera",
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.35, 1.1, 0.6), rot=(0.0, -0.0, -0.60182, -0.79864), convention="opengl"
+            pos=(0.35, 1.1, 0.6), rot=(-0.0, -0.60182, -0.79864, 0.0), convention="opengl"
         ),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(

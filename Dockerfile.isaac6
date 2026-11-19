@@ -1,0 +1,123 @@
+# syntax = docker/dockerfile:1.7
+#
+# Isaac Sim 6.2 / Isaac Lab 3.0 image (Python 3.12, torch 2.11).
+#
+# This is the Isaac Lab 3.0 counterpart of `Dockerfile`; the original file is left untouched so the
+# Isaac Sim 5.1 / Isaac Lab 2.x flow keeps working. Build with `make build-isaaclab6`.
+#
+# Differences from `Dockerfile`:
+#   * Python 3.12 (required by Isaac Sim 6 / Isaac Lab 3.0), installed into a dedicated venv.
+#   * torch 2.11.0 / torchvision 0.26.0 (versions pinned by Isaac Lab 3.0).
+#   * Isaac Lab comes from the `isaaclab==3.0.0` PyPI wheel, which bundles isaaclab_tasks, isaaclab_physx,
+#     isaaclab_assets, ... Isaac Lab 3.0 dropped `isaaclab.sh --install`, so the `dependencies/IsaacLab`
+#     submodule is NOT needed by this image.
+#   * numpy 2.x (the numpy==1.26.0 pin of the old image no longer applies).
+#
+# NOTE: not yet built/tested on a GPU machine. Host NVIDIA driver 595 is the version Isaac Sim 6 is tested with.
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION=3.12
+# CUDA flavour of the PyTorch wheels: cu128 (default, matches the base image) or cu130.
+ARG TORCH_CUDA=cu128
+
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=all \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=5 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ACCEPT_EULA=Y \
+    OMNI_KIT_ACCEPT_EULA=YES \
+    PRIVACY_CONSENT=Y \
+    TERM=xterm-256color
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::https::Timeout "120";' >> /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "120";' >> /etc/apt/apt.conf.d/80-retries
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gpg \
+    && curl --retry 5 --retry-delay 10 --retry-all-errors -fsSL \
+        "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776" \
+        | gpg --dearmor -o /usr/share/keyrings/deadsnakes.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu jammy main" \
+        > /etc/apt/sources.list.d/deadsnakes.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        libasound2 \
+        libdbus-1-3 \
+        libegl1 \
+        libfontconfig1 \
+        libgl1 \
+        libglu1-mesa \
+        libglib2.0-0 \
+        libgtk-3-0 \
+        libice6 \
+        libnss3 \
+        libsm6 \
+        libvulkan1 \
+        libx11-6 \
+        libx11-xcb1 \
+        libxcb-cursor0 \
+        libxcb-icccm4 \
+        libxcb-image0 \
+        libxcb-keysyms1 \
+        libxcb-render-util0 \
+        libxcb-xinerama0 \
+        libxcb-xkb1 \
+        libxcursor1 \
+        libxext6 \
+        libxi6 \
+        libxinerama1 \
+        libxkbcommon-x11-0 \
+        libxrandr2 \
+        libxrender1 \
+        libxt6 \
+        libxtst6 \
+        libxxf86vm1 \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-dev \
+        python${PYTHON_VERSION}-venv \
+        unzip \
+        vulkan-tools \
+        wget \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dedicated virtual environment: the Isaac Sim 6 packages pin Newton, Warp and MuJoCo, so they must not share
+# an environment with unrelated packages.
+RUN python${PYTHON_VERSION} -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /workspace/aicapstone
+
+RUN python -m pip install --upgrade pip "setuptools<82" wheel
+
+# 1) PyTorch (versions pinned by Isaac Lab 3.0)
+RUN python -m pip install \
+        torch==2.11.0 \
+        torchvision==0.26.0 \
+        --index-url https://download.pytorch.org/whl/${TORCH_CUDA}
+
+# 2) Isaac Sim 6.2
+RUN python -m pip install \
+        "isaacsim[all,extscache]==6.2.0.0" \
+        --extra-index-url https://pypi.nvidia.com
+
+# 3) Isaac Lab 3.0 (single wheel that bundles isaaclab_tasks, isaaclab_physx, isaaclab_assets, ...)
+RUN python -m pip install "isaaclab==3.0.0"
+
+# 4) The simulator package: pulls leisaac (Isaac Lab 3.0 port) and lerobot==0.6.1 (allows torch 2.11).
+COPY packages/simulator /workspace/aicapstone/packages/simulator
+RUN python -m pip install -e packages/simulator
+
+CMD ["/bin/bash"]

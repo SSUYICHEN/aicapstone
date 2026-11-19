@@ -95,7 +95,8 @@ def _clamp_delta(delta: torch.Tensor, max_norm: float = _MAX_CARTESIAN_DELTA) ->
 
 
 def _shortest_quat(quat: torch.Tensor) -> torch.Tensor:
-    return torch.where(quat[:, 0:1] < 0.0, -quat, quat)
+    # Isaac Lab 3.x quaternion order is (x, y, z, w): the scalar part is the last component.
+    return torch.where(quat[:, 3:4] < 0.0, -quat, quat)
 
 
 def _retreat_xy_toward(
@@ -111,9 +112,9 @@ def _retreat_xy_toward(
     return out
 
 
-def _yaw_from_quat_wxyz(quat_wxyz: torch.Tensor) -> torch.Tensor:
-    """Yaw (rotation about world z) from a (w, x, y, z) quaternion."""
-    w, x, y, z = quat_wxyz[:, 0], quat_wxyz[:, 1], quat_wxyz[:, 2], quat_wxyz[:, 3]
+def _yaw_from_quat_xyzw(quat_xyzw: torch.Tensor) -> torch.Tensor:
+    """Yaw (rotation about world z) from an (x, y, z, w) quaternion."""
+    x, y, z, w = quat_xyzw[:, 0], quat_xyzw[:, 1], quat_xyzw[:, 2], quat_xyzw[:, 3]
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
     return torch.atan2(siny_cosp, cosy_cosp)
@@ -210,9 +211,9 @@ class CutleryArrangementStateMachine(StateMachineBase):
         self._rest_ee_pos_w = self._ee_pos_w(robot).clone()
 
     def check_success(self, env) -> bool:
-        plate_pos = env.scene[_PLATE_NAME].data.root_pos_w - env.scene.env_origins
-        fork_pos = env.scene[_FORK_NAME].data.root_pos_w - env.scene.env_origins
-        knife_pos = env.scene[_KNIFE_NAME].data.root_pos_w - env.scene.env_origins
+        plate_pos = env.scene[_PLATE_NAME].data.root_pos_w.torch - env.scene.env_origins
+        fork_pos = env.scene[_FORK_NAME].data.root_pos_w.torch - env.scene.env_origins
+        knife_pos = env.scene[_KNIFE_NAME].data.root_pos_w.torch - env.scene.env_origins
 
         done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
 
@@ -238,10 +239,10 @@ class CutleryArrangementStateMachine(StateMachineBase):
 
         obj_name = _PICK_ORDER[self._current_object_idx]
         x_sign = _PLACE_X_SIGNS[self._current_object_idx]
-        obj_pos_w = env.scene[obj_name].data.root_pos_w.clone()
-        obj_quat_w = env.scene[obj_name].data.root_quat_w.clone()
-        plate_pos_w = env.scene[_PLATE_NAME].data.root_pos_w.clone()
-        robot_root_pos_w = robot.data.root_pos_w.clone()
+        obj_pos_w = env.scene[obj_name].data.root_pos_w.torch.clone()
+        obj_quat_w = env.scene[obj_name].data.root_quat_w.torch.clone()
+        plate_pos_w = env.scene[_PLATE_NAME].data.root_pos_w.torch.clone()
+        robot_root_pos_w = robot.data.root_pos_w.torch.clone()
 
         place_target_w = plate_pos_w.clone()
         place_target_w[:, 0] += x_sign * _PLACE_OFFSET
@@ -370,11 +371,11 @@ class CutleryArrangementStateMachine(StateMachineBase):
 
     def _ee_pos_w(self, robot) -> torch.Tensor:
         body_idx = self._ee_body_idx if self._ee_body_idx >= 0 else -1
-        return robot.data.body_pos_w[:, body_idx, :]
+        return robot.data.body_pos_w.torch[:, body_idx, :]
 
     def _ee_quat_w(self, robot) -> torch.Tensor:
         body_idx = self._ee_body_idx if self._ee_body_idx >= 0 else -1
-        return robot.data.body_quat_w[:, body_idx, :]
+        return robot.data.body_quat_w.torch[:, body_idx, :]
 
     def _joint_position_franka_action(
         self,
@@ -384,8 +385,8 @@ class CutleryArrangementStateMachine(StateMachineBase):
         gripper_cmd: torch.Tensor,
     ) -> torch.Tensor:
         robot = env.scene["robot"]
-        root_pos_w = robot.data.root_pos_w
-        root_quat_w = robot.data.root_quat_w
+        root_pos_w = robot.data.root_pos_w.torch
+        root_quat_w = robot.data.root_quat_w.torch
         root_quat_inv = quat_inv(root_quat_w)
 
         target_pos_root = quat_apply(root_quat_inv, target_pos_w - root_pos_w)
@@ -406,16 +407,16 @@ class CutleryArrangementStateMachine(StateMachineBase):
     def _arm_joint_pos(self, robot) -> torch.Tensor:
         if not self._arm_joint_ids:
             raise RuntimeError("setup() must run before requesting actions.")
-        return robot.data.joint_pos[:, self._arm_joint_ids]
+        return robot.data.joint_pos.torch[:, self._arm_joint_ids]
 
     def _ee_jacobian_root(self, robot) -> torch.Tensor:
         if self._jacobi_body_idx < 0 or not self._jacobi_joint_ids:
             raise RuntimeError("setup() must run before requesting actions.")
 
-        jacobian = robot.root_physx_view.get_jacobians()[
+        jacobian = robot.data.body_link_jacobian_w.torch[
             :, self._jacobi_body_idx, :, self._jacobi_joint_ids
-        ].clone()
-        root_rot_matrix = matrix_from_quat(quat_inv(robot.data.root_quat_w))
+        ].clone()  # Isaac Lab 3.x: public data property replaces root_physx_view
+        root_rot_matrix = matrix_from_quat(quat_inv(robot.data.root_quat_w.torch))
         jacobian[:, :3, :] = torch.bmm(root_rot_matrix, jacobian[:, :3, :])
         jacobian[:, 3:, :] = torch.bmm(root_rot_matrix, jacobian[:, 3:, :])
         return jacobian
@@ -449,7 +450,7 @@ class CutleryArrangementStateMachine(StateMachineBase):
         yaw_offset: float = 0.0,
     ) -> torch.Tensor:
         if self._gripper_down_yaw_w is None or self._gripper_down_yaw_w.shape[0] != num_envs:
-            base_yaw = _yaw_from_quat_wxyz(obj_quat_w).to(device=device, dtype=dtype) # gripper aligned with the orientation of the object
+            base_yaw = _yaw_from_quat_xyzw(obj_quat_w).to(device=device, dtype=dtype) # gripper aligned with the orientation of the object
             self._gripper_down_yaw_offset_w = torch.empty(num_envs, device=device, dtype=dtype).uniform_(
                 _GRIPPER_DOWN_YAW_OFFSET_RANGE[0],
                 _GRIPPER_DOWN_YAW_OFFSET_RANGE[1],

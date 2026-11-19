@@ -60,7 +60,7 @@ class ToyBlocksCollectionEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(3.449251, 0.799812, 0.45),
-            rot=(0.707, 0.0, 0.0, 0.707),
+            rot=(0.0, 0.0, 0.707, 0.707),
         ),
     )
 
@@ -72,7 +72,7 @@ class ToyBlocksCollectionEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(3.376005, 0.80095, 0.45),
-            rot=(0.707, 0.0, 0.0, 0.707),
+            rot=(0.0, 0.0, 0.707, 0.707),
         ),
     )
 
@@ -84,7 +84,7 @@ class ToyBlocksCollectionEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(3.340758, 0.760893, 0.45),
-            rot=(0.26788, -0.2733, 0.65215, 0.65441),
+            rot=(-0.2733, 0.65215, 0.65441, 0.26788),
         ),
     )
 
@@ -92,7 +92,7 @@ class ToyBlocksCollectionEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
         prim_path="{ENV_REGEX_NS}/Scene/storage_box",
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(3.0, 0.8, 0.36348),
-            rot=(1.0, 0.0, 0.0, 0.0),
+            rot=(0.0, 0.0, 0.0, 1.0),
         ),
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(LIVING_OBJECTS_ROOT / "Storage_Box" / "storage_box.usd"),
@@ -117,10 +117,10 @@ def toys_in_box(
     red_block: RigidObject = env.scene[red_block_cfg.name]
     storage_box: RigidObject = env.scene[storage_box_cfg.name]
 
-    green_block_pos = green_block.data.root_pos_w - env.scene.env_origins
-    blue_block_pos = blue_block.data.root_pos_w - env.scene.env_origins
-    red_block_pos = red_block.data.root_pos_w - env.scene.env_origins
-    storage_box_pos = storage_box.data.root_pos_w - env.scene.env_origins
+    green_block_pos = green_block.data.root_pos_w.torch - env.scene.env_origins
+    blue_block_pos = blue_block.data.root_pos_w.torch - env.scene.env_origins
+    red_block_pos = red_block.data.root_pos_w.torch - env.scene.env_origins
+    storage_box_pos = storage_box.data.root_pos_w.torch - env.scene.env_origins
 
     done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
 
@@ -166,10 +166,10 @@ class ToyBlocksCollectionEvalEnvCfg(SingleArmFrankaTaskEnvCfg):
         self.dynamic_reset_gripper_effort_limit = False
 
         self.scene.robot.init_state.pos = (3.3, 0.35, 0.28)
-        self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, 0.707)
+        self.scene.robot.init_state.rot = (0.0, 0.0, 0.707, 0.707)
 
         self.scene.front.offset.pos = (3.3, 2.55, 1.1)
-        self.scene.front.offset.rot = (0.0, 0.0, -0.58292, -0.81253)
+        self.scene.front.offset.rot = (0.0, -0.58292, -0.81253, 0.0)
         self.scene.front.offset.convention = "opengl"
         self.scene.front.spawn.focal_length = 55
 
