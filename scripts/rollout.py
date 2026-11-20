@@ -120,6 +120,21 @@ parser.add_argument(
     help="Print observation and action tensor shapes around each local LeRobot inference call.",
 )
 parser.add_argument(
+    "--save_video_dir",
+    type=str,
+    default=None,
+    help=(
+        "If set, save the front/wrist camera observations of every evaluated episode as mp4 files in this directory"
+        " (file name: ep<idx>_<camera>_<success|fail>.mp4). Off by default."
+    ),
+)
+parser.add_argument(
+    "--video_stride",
+    type=int,
+    default=2,
+    help="Keep every N-th environment step when saving videos (reduces memory use). Default: 2.",
+)
+parser.add_argument(
     "--num_envs",
     type=int,
     default=1,
@@ -510,6 +525,26 @@ def get_camera_infos(
     return camera_infos
 
 
+def _write_episode_video(frames: list, path: str, fps: int) -> None:
+    """Encode a list of (H, W, 3) uint8 RGB frames as an mp4 file (opt-in debugging aid, see --save_video_dir)."""
+    import av
+
+    def _encode(codec: str) -> None:
+        with av.open(path, "w") as container:
+            stream = container.add_stream(codec, rate=fps)
+            stream.height, stream.width, stream.pix_fmt = frames[0].shape[0], frames[0].shape[1], "yuv420p"
+            for frame in frames:
+                for packet in stream.encode(av.VideoFrame.from_ndarray(np.ascontiguousarray(frame), format="rgb24")):
+                    container.mux(packet)
+            for packet in stream.encode():
+                container.mux(packet)
+
+    try:
+        _encode("libx264")
+    except Exception:  # noqa: BLE001 - fall back to a codec that is always available in PyAV
+        _encode("mpeg4")
+
+
 def main():
     task_id = resolve_task(args_cli.task)
     args_cli.task = task_id
@@ -587,6 +622,10 @@ def main():
     # and ignore any further activity until the round ends.
     num_envs = env.num_envs
     success_count, episodes_done = 0, 0
+    video_cameras = ("front", "wrist")
+    if args_cli.save_video_dir:
+        _Path(args_cli.save_video_dir).mkdir(parents=True, exist_ok=True)
+        video_fps = max(1, int(round(1.0 / env.step_dt / args_cli.video_stride)))
     while simulation_app.is_running():
         if max_episode_count > 0 and episodes_done >= max_episode_count:
             break
@@ -607,12 +646,23 @@ def main():
         controller.reset()
         done_mask = torch.zeros(num_envs, dtype=torch.bool, device=env.device)
         success_mask = torch.zeros(num_envs, dtype=torch.bool, device=env.device)
+        video_frames = {(e, c): [] for e in range(num_envs) for c in video_cameras} if args_cli.save_video_dir else None
+        video_step = 0
 
         while simulation_app.is_running():
             with torch.inference_mode():
                 if controller.reset_state:
                     controller.reset()
                     break
+
+                if video_frames is not None and video_step % args_cli.video_stride == 0:
+                    for e in range(num_envs):
+                        if bool(done_mask[e]):
+                            continue  # frames after an env's first termination belong to the auto-reset episode
+                        for c in video_cameras:
+                            if c in obs_dict["policy"]:
+                                video_frames[(e, c)].append(obs_dict["policy"][c][e].cpu().numpy())
+                video_step += 1
 
                 policy_obs_dict = preprocess_obs_dict(
                     obs_dict["policy"], language_instruction
@@ -632,6 +682,16 @@ def main():
                     rate_limiter.sleep(env)
 
         round_success = int(success_mask[:batch].sum().item())
+        if video_frames is not None:
+            for e in range(batch):
+                outcome = "success" if bool(success_mask[e]) else "fail"
+                for c in video_cameras:
+                    if video_frames[(e, c)]:
+                        video_path = str(
+                            _Path(args_cli.save_video_dir) / f"ep{episodes_done + e + 1:03d}_{c}_{outcome}.mp4"
+                        )
+                        _write_episode_video(video_frames[(e, c)], video_path, video_fps)
+                        print(f"[rollout] saved {video_path} ({len(video_frames[(e, c)])} frames)", flush=True)
         success_count += round_success
         episodes_done += batch
         print(
