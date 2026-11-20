@@ -1,0 +1,12 @@
+# Pinned versions of the GR00T training environment (see scripts/setup_groot_env.sh and isaaclab3.0.md).
+#
+# Why a separate environment: GR00T N1.5 needs flash-attn, and flash-attn only has prebuilt wheels up to torch 2.8,
+# while the default environment (uv.lock) uses torch 2.10. These are the versions that were run on an L40S
+# (driver 595, CUDA 12.x PyTorch wheels, Python 3.11).
+lerobot==0.4.4
+torch==2.7.1
+torchvision==0.22.1
+# torchcodec must match the torch version (torch 2.7 -> torchcodec 0.3-0.5); lerobot alone would pick a newer one.
+torchcodec==0.5
+transformers==4.57.6
+flash-attn==2.8.3

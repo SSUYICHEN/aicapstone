@@ -111,8 +111,18 @@ parser.add_argument(
 parser.add_argument(
     "--policy_checkpoint_path",
     type=str,
-    required=True,
-    help="Path to the local LeRobot checkpoint.",
+    default=None,
+    help="Path to the local LeRobot checkpoint (required unless --policy_server is given).",
+)
+parser.add_argument(
+    "--policy_server",
+    type=str,
+    default=None,
+    help=(
+        "HOST:PORT of a running scripts/policy_server.py. When set, the policy runs in that process (typically on"
+        " the host, in the environment it was trained in) instead of inside this container. Needed for policies whose"
+        " dependencies cannot be installed next to Isaac Lab, e.g. GR00T."
+    ),
 )
 parser.add_argument(
     "--debug_policy_shapes",
@@ -158,6 +168,8 @@ try:
 except argparse.ArgumentError:
     pass
 args_cli = parser.parse_args()
+if not args_cli.policy_server and not args_cli.policy_checkpoint_path:
+    parser.error("--policy_checkpoint_path is required unless --policy_server is given")
 
 app_launcher = AppLauncher(vars(args_cli))
 simulation_app = app_launcher.app
@@ -501,6 +513,38 @@ class LeRobotSyncPolicy:
         return torch.from_numpy(actions)
 
 
+class RemoteLeRobotPolicy:
+    """Policy that runs in another process (scripts/policy_server.py). Same interface as LeRobotSyncPolicy."""
+
+    def __init__(
+        self,
+        address: str,
+        task_type: str,
+        camera_infos: dict[str, tuple[int, int]],
+        actions_per_chunk: int,
+    ):
+        from simulator.policy_service.client import RemotePolicyClient
+
+        host, _, port = address.rpartition(":")
+        if not host or not port.isdigit():
+            raise ValueError(f"--policy_server must look like HOST:PORT, got '{address}'")
+        print(f"[rollout] connecting to policy server {address} ...", flush=True)
+        self.camera_keys = list(camera_infos.keys())
+        self.client = RemotePolicyClient(host, int(port))
+        self.client.setup(camera_infos, task_type, actions_per_chunk)
+        print("[rollout] remote policy is ready.", flush=True)
+
+    def reset(self):
+        self.client.reset()
+
+    def get_action(self, observation_dict: dict) -> torch.Tensor:
+        images = {key: observation_dict[key].cpu().numpy().astype(np.uint8) for key in self.camera_keys}
+        joint_pos = observation_dict["joint_pos"].cpu().numpy()
+        actions = self.client.act(images, joint_pos, observation_dict["task_description"])
+        # actions: (num_envs, action_dim) - one action per env for this step.
+        return torch.from_numpy(actions)
+
+
 def preprocess_obs_dict(obs_dict: dict, language_instruction: str):
     obs_dict["task_description"] = language_instruction
     return obs_dict
@@ -597,15 +641,23 @@ def main():
         flush=True,
     )
 
-    policy = LeRobotSyncPolicy(
-        policy_type=get_policy_type(args_cli.policy_type),
-        pretrained_name_or_path=args_cli.policy_checkpoint_path,
-        task_type=policy_task_type,
-        camera_infos=camera_infos,
-        actions_per_chunk=args_cli.policy_action_horizon,
-        device=args_cli.device,
-        debug_policy_shapes=args_cli.debug_policy_shapes,
-    )
+    if args_cli.policy_server:
+        policy = RemoteLeRobotPolicy(
+            address=args_cli.policy_server,
+            task_type=policy_task_type,
+            camera_infos=camera_infos,
+            actions_per_chunk=args_cli.policy_action_horizon,
+        )
+    else:
+        policy = LeRobotSyncPolicy(
+            policy_type=get_policy_type(args_cli.policy_type),
+            pretrained_name_or_path=args_cli.policy_checkpoint_path,
+            task_type=policy_task_type,
+            camera_infos=camera_infos,
+            actions_per_chunk=args_cli.policy_action_horizon,
+            device=args_cli.device,
+            debug_policy_shapes=args_cli.debug_policy_shapes,
+        )
 
     rate_limiter = RateLimiter(args_cli.step_hz)
     controller = Controller()
