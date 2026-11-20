@@ -15,7 +15,7 @@ This branch ports the simulator side of the repo from Isaac Sim 5.1 / Isaac Lab 
 | Python | 3.11 | 3.12 |
 | PyTorch | 2.7.0 | 2.11.0 (torchvision 0.26.0) |
 | numpy | 1.26.0 (pinned) | 2.x |
-| lerobot (simulator) | 0.4.2 | 0.6.1 (`lerobot[dataset]`) |
+| lerobot (simulator) | 0.4.2 | 0.6.1 (`lerobot[dataset,diffusion]`) |
 | NVIDIA driver | 580 | 595 (version Isaac Sim 6 is tested with) |
 
 ## Build and run

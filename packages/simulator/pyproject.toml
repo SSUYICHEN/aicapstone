@@ -12,8 +12,9 @@ dependencies = [
     # Isaac Lab 3.0 port of leisaac (fork branch); switch back to LightwheelAI/leisaac once upstream supports Isaac Lab 3.0.
     "leisaac @ git+https://github.com/SSUYICHEN/leisaac.git@isaaclab-3.0#subdirectory=source/leisaac",
     # The `dataset` extra (datasets, pyarrow, pandas, av, torchcodec, ...) is required by LeRobotDataset; without it the
-    # import fails and leisaac silently falls back to its GenericDataRecorder.
-    "lerobot[dataset]==0.6.1",
+    # import fails and leisaac silently falls back to its GenericDataRecorder. The `diffusion` extra (diffusers) is
+    # required to load a diffusion policy in scripts/rollout.py.
+    "lerobot[dataset,diffusion]==0.6.1",
 ]
 
 [tool.setuptools]

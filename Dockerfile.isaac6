@@ -117,7 +117,7 @@ RUN python -m pip install \
 # 3) Isaac Lab 3.0 (single wheel that bundles isaaclab_tasks, isaaclab_physx, isaaclab_assets, ...)
 RUN python -m pip install "isaaclab==3.0.0"
 
-# 4) The simulator package: pulls leisaac (Isaac Lab 3.0 port) and lerobot[dataset]==0.6.1 (allows torch 2.11;
+# 4) The simulator package: pulls leisaac (Isaac Lab 3.0 port) and lerobot[dataset,diffusion]==0.6.1 (allows torch 2.11;
 #    the `dataset` extra needs the FFmpeg libraries installed above for torchcodec).
 COPY packages/simulator /workspace/aicapstone/packages/simulator
 RUN python -m pip install -e packages/simulator
