@@ -3,12 +3,9 @@
 This branch ports the simulator side of the repo from Isaac Sim 5.1 / Isaac Lab 2.x to
 **Isaac Sim 6.2 / Isaac Lab 3.0**. The `main` branch and the original `Dockerfile` are unchanged.
 
-> **Status: statically checked against the Isaac Lab `v3.0.0` source only. Not yet built or run on a GPU machine.**
-> Treat everything below marked *unverified* as a checklist for the first GPU run.
-
 ## Target environment
 
-| | `main` (old) | `isaaclab-3.0` |
+| | `main` (isaaclab-2.3) | `isaaclab-3.0` |
 |---|---|---|
 | Isaac Sim | 5.1.0 | 6.2.0.0 |
 | Isaac Lab | 2.x (git submodule) | 3.0.0 (`pip install isaaclab==3.0.0`, no submodule needed) |
@@ -57,24 +54,3 @@ error, it silently produces wrong orientations.
   `SSUYICHEN/leisaac@isaaclab-3.0` (upstream has no Isaac Lab 3.0 support and no plans for it at the time of writing).
 - `lerobot==0.6.1`: 0.4.2 requires `torch<2.8` and 0.5.x requires `torch<2.11`, both incompatible with Isaac Lab 3.0's
   `torch==2.11.0`. 0.7.0 removed `lerobot.async_inference.helpers`, which `scripts/rollout.py` imports.
-
-## Unverified / to check on the first GPU run
-
-1. `docker build` of `Dockerfile.isaac6` and `pip` dependency resolution (Isaac Lab pins `transformers==5.10.4`;
-   lerobot extras that need `transformers<5.6`, e.g. smolvla/pi, will conflict. The diffusion policy should not).
-2. `--enable_cameras` / `--headless` flags: **verified on a GPU machine (driver 595.112.07, L40S)**. Isaac Lab 3.0's launcher
-   no longer defines them, so `generate.py --enable_cameras` failed with `unrecognized arguments`. However, the flag
-   still matters: the Kit launcher uses it to choose the rendering experience, and the automatic camera detection only
-   exists in the new `launch_simulation(cfg, ...)` API, not in the deprecated `AppLauncher` the scripts use. Without it
-   Kit starts without the RTX renderer and camera creation fails (`unable to find match factory for engine: rtx`,
-   `Unable to create prim for graph at /Render/PostProcess/SDGPipeline`). The three scripts therefore enable cameras by
-   default and still accept `--enable_cameras`. `--headless` is gone as well (no window opens without a visualizer).
-3. `scripts/rollout.py` uses `omni.kit.viewport.utility` / `omni.ui` (Kit modules); confirm they exist in Isaac Sim 6.
-4. `lerobot` 0.6.1 symbols used by `rollout.py` (`policies.factory`, `policies.utils`, `async_inference.helpers`,
-   `utils.constants`) and the dataset format written by `LeRobotDataset`; host-side training must read what the
-   simulator container writes.
-5. The default physics backend: make sure tasks run on **PhysX** (Franka config already selects `Physics: physx`).
-6. Compare old vs new: same seed / same `object_poses.json` -> object start poses, end-effector poses, success rate.
-7. Known pre-existing issue: `tests/test_object_poses_loader.py` imports `load_object_poses`, which does not exist
-   (the loader exposes `load_episode_poses`); the test was already failing on `main`.
-8. `packages/simulator/uv.lock` still reflects the old dependency set.
