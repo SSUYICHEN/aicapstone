@@ -17,15 +17,13 @@ There is no authentication: keep the default ``--host 127.0.0.1`` unless the net
 from __future__ import annotations
 
 import argparse
+import errno
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages" / "simulator" / "src"))
 
-from _policy_env import ensure_env  # noqa: E402
-
-from simulator.policy_service.runner import LeRobotPolicyRunner  # noqa: E402
-from simulator.policy_service.server import serve  # noqa: E402
+from _policy_env import ensure_env  # noqa: E402  (standard library only)
 
 
 def main() -> int:
@@ -38,6 +36,10 @@ def main() -> int:
     args = parser.parse_args()
     ensure_env(args.policy_type)  # re-runs this script in the policy's environment (.venv / .venv-groot)
 
+    # Imported only now: they need numpy / lerobot, which the Python that started this script may not have.
+    from simulator.policy_service.runner import LeRobotPolicyRunner
+    from simulator.policy_service.server import serve
+
     runner = LeRobotPolicyRunner(args.policy_type, args.checkpoint, args.device)
     try:
         serve(
@@ -48,6 +50,15 @@ def main() -> int:
         )
     except KeyboardInterrupt:
         print("[policy-server] stopped", flush=True)
+    except OSError as error:
+        if error.errno == errno.EADDRINUSE:
+            print(
+                f"[policy-server] port {args.port} is already in use. Stop the other process or choose another port"
+                " with --port (use the same port for rollout.py --policy_server=HOST:PORT).",
+                file=sys.stderr,
+            )
+            return 1
+        raise
     return 0
 
 

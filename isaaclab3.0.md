@@ -40,6 +40,9 @@ patch (fixed upstream in Isaac Lab 3.0), replaced `isaacsim.core.utils.prims`, `
   `AppLauncher` is used. `generate.py`, `teleop.py` and `rollout.py` now enable cameras by default and still accept
   the flag.
 - Optional, off by default: `rollout.py --save_video_dir <dir>` saves each episode's `front` / `wrist` camera as mp4.
+- New, additive: `scripts/train.py` (one training entry for diffusion and GR00T), `make install-groot` (pinned GR00T
+  environment), and `scripts/policy_server.py` + `rollout.py --policy_server` (run a policy on the host and query it
+  from the simulator container). Existing commands are unchanged.
 
 **Not changed:** `main`, `Dockerfile`, `packages/umi`, the host training environment (lerobot 0.4.4), task / state
 machine logic.
@@ -90,17 +93,32 @@ python -c "from huggingface_hub import HfApi; HfApi().create_tag('${HF_USER}/<re
 
 **Stage 2, train (host, not Docker; Isaac Lab is not involved)**
 
+`scripts/train.py` is one entry point for every policy; `--policy` selects the policy and its defaults. It runs the
+policy in the right environment automatically (`.venv` or `.venv-groot`). Install the environment of the policy you
+want (both can coexist):
+
+| Policy | Environment | Lerobot |
+|---|---|---|
+| `diffusion` | `uv sync` (`.venv`) | 0.4.4 |
+| `groot` (GR00T N1.5) | `make install-groot` (`.venv-groot`) | 0.4.4, flash-attn, pinned in `envs/groot/constraints.txt` |
+
+GR00T cannot share an environment with Isaac Lab or the default one (it needs `torch<=2.8` for flash-attn and
+`transformers<5`), hence the separate, pinned environment. `make install-groot` needs `uv` and `ffmpeg`; flash-attn is installed from a prebuilt wheel, so no CUDA toolkit is
+required.
+
 ```bash
-uv sync && source .venv/bin/activate
-lerobot-train --dataset.repo_id=${HF_USER}/<repo_id> --policy.type=diffusion \
-  --output_dir=checkpoints/<name> --job_name=<name> --policy.device=cuda \
-  --wandb.enable=false --policy.push_to_hub=false \
-  --steps=20000 --save_freq=5000 --log_freq=100 --batch_size=16 --num_workers=2
+python scripts/train.py --policy diffusion --dataset ${HF_USER}/<repo_id> --name cup_dp
+python scripts/train.py --policy groot     --dataset ${HF_USER}/<repo_id> --name cup_groot
 ```
 
-`--output_dir` must be a new folder under `checkpoints/` so the container can see it.
+Defaults per policy (override with `--steps`, `--save-freq`, `--log-freq`, `--batch-size`, `--num-workers`):
+diffusion 20000 steps / batch 16, groot 10000 steps / batch 4 (L40S 46GB). Unknown arguments are passed to
+`lerobot-train` (e.g. `--policy.tune_llm=true`); `--dry-run` prints the command. Checkpoints go to
+`checkpoints/<name>` (must not exist yet), which the container can see.
 
 **Stage 3, rollout (container)**
+
+A diffusion policy runs directly in the container:
 
 ```bash
 python scripts/rollout.py --task=eval/cup_stacking_eval.py --policy_type=lerobot-diffusion \
@@ -110,8 +128,27 @@ python scripts/rollout.py --task=eval/cup_stacking_eval.py --policy_type=lerobot
 ```
 
 The container uses lerobot 0.6.1, host training uses 0.4.4; a 0.4.4-trained diffusion policy loads and runs in the
-container. Policies that need `transformers` (`pi0`, `smolvla`, ...) are not supported in the new container (Isaac Lab
-3.0 pins `transformers==5.10.4`, lerobot needs `<5.6`).
+container.
+
+**GR00T, or any policy that cannot be installed next to Isaac Lab, runs through a policy server.** The policy runs on
+the host in its own environment; the simulator in the container queries it over TCP (`--net=host`, so `127.0.0.1`
+reaches the host). Start the server on the host, then run the rollout in the container with `--policy_server`:
+
+```bash
+# host
+python scripts/policy_server.py --policy-type groot \
+    --checkpoint checkpoints/<name>/checkpoints/last/pretrained_model          # add --port N if 5555 is in use
+```
+
+```bash
+# container
+python scripts/rollout.py --task=eval/cup_stacking_eval.py --policy_server=127.0.0.1:5555 \
+    --policy_action_horizon=1 --device=cuda --eval_rounds=10 --episode_length_s=20 --save_video_dir data/rollout_videos
+```
+
+`--policy-type diffusion` works the same way. There is no authentication; the server binds to `127.0.0.1` by default.
+Policies that need `transformers` (`pi0`, `smolvla`, ...) cannot be installed in the container (Isaac Lab 3.0 pins
+`transformers==5.10.4`, lerobot needs `<5.6`).
 
 ## 3. Documentation
 
