@@ -4,7 +4,7 @@ The MVP UMI pipeline reports per-object placements in the frame of a single
 ArUco anchor tag observed in the same scene. Each task config knows where that
 anchor sits in the IsaacLab world and which scene objects each ArUco tag maps
 to. This loader applies the SE(2) anchor-to-world transform with the per-task
-fixed ``z`` and roll/pitch conventions and returns ``(pos_xyz, quat_wxyz)``
+fixed ``z`` and roll/pitch conventions and returns ``(pos_xyz, quat_xyzw)``
 tuples ready to drop into ``RigidObjectCfg.InitialStateCfg``.
 
 The module is intentionally free of IsaacLab / numpy / torch dependencies so it
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
-# (pos_xyz, quat_wxyz) — quaternion is (w, x, y, z) to match IsaacLab convention.
+# (pos_xyz, quat_xyzw) — quaternion is (x, y, z, w) to match the Isaac Lab 3.x convention.
 WorldPose = tuple[tuple[float, float, float], tuple[float, float, float, float]]
 
 
@@ -86,7 +86,7 @@ def load_episode_poses(
             ...
         ]
 
-    Returns one ``{object_name: (pos_xyz, quat_wxyz)}`` dict per kept episode.
+    Returns one ``{object_name: (pos_xyz, quat_xyzw)}`` dict per kept episode.
 
     Behavior:
         - Entries with ``status != "full"`` are skipped.
@@ -159,7 +159,7 @@ def load_episode_poses(
                 yaw_w = anchor_yaw + _rotvec_to_yaw(rvec) + per_object
 
             pos = (x_w, y_w, float(config.object_z))
-            quat = _euler_xyz_to_quat_wxyz(
+            quat = _euler_xyz_to_quat_xyzw(
                 float(config.object_roll), float(config.object_pitch), yaw_w
             )
             episode_poses[name] = (pos, quat)
@@ -311,10 +311,10 @@ def _parse_object_entry(
     return tag_id, x_a, y_a, yaw_a
 
 
-def _euler_xyz_to_quat_wxyz(
+def _euler_xyz_to_quat_xyzw(
     roll: float, pitch: float, yaw: float
 ) -> tuple[float, float, float, float]:
-    """Match ``isaaclab.utils.math.quat_from_euler_xyz`` (extrinsic XYZ, returns wxyz)."""
+    """Match ``isaaclab.utils.math.quat_from_euler_xyz`` (extrinsic XYZ, returns xyzw)."""
     cr = math.cos(roll * 0.5)
     sr = math.sin(roll * 0.5)
     cp = math.cos(pitch * 0.5)
@@ -326,4 +326,4 @@ def _euler_xyz_to_quat_wxyz(
     x = sr * cp * cy - cr * sp * sy
     y = cr * sp * cy + sr * cp * sy
     z = cr * cp * sy - sr * sp * cy
-    return (w, x, y, z)
+    return (x, y, z, w)

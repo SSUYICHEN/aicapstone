@@ -44,7 +44,7 @@ class CupStackingEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
             usd_path=str(KITCHEN_OBJECTS_ROOT / "BlueCup" / "BlueCup.usd"),
             mass_props=MassPropertiesCfg(mass=0.1),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(8.95, 6.44, 1.0), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(8.95, 6.44, 1.0), rot=(0.0, 0.0, 0.0, 1.0)),
     )
     pink_cup: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Scene/pink_cup",
@@ -52,7 +52,7 @@ class CupStackingEvalSceneCfg(SingleArmFrankaTaskSceneCfg):
             usd_path=str(KITCHEN_OBJECTS_ROOT / "PinkCup" / "PinkCup.usd"),
             mass_props=MassPropertiesCfg(mass=0.1),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(9.07, 6.53, 1.0), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(9.07, 6.53, 1.0), rot=(0.0, 0.0, 0.0, 1.0)),
     )
 
 
@@ -68,8 +68,8 @@ def blue_cup_on_top_pink_cup(
     blue_cup: RigidObject = env.scene[blue_cup_cfg.name]
     pink_cup: RigidObject = env.scene[pink_cup_cfg.name]
 
-    blue_cup_pos = blue_cup.data.root_pos_w - env.scene.env_origins
-    pink_cup_pos = pink_cup.data.root_pos_w - env.scene.env_origins
+    blue_cup_pos = blue_cup.data.root_pos_w.torch - env.scene.env_origins
+    pink_cup_pos = pink_cup.data.root_pos_w.torch - env.scene.env_origins
 
     done = torch.abs(blue_cup_pos[:, 0] - pink_cup_pos[:, 0]) < x_tolerance
     done = torch.logical_and(done, torch.abs(blue_cup_pos[:, 1] - pink_cup_pos[:, 1]) < y_tolerance)
@@ -106,7 +106,7 @@ class CupStackingEvalEnvCfg(SingleArmFrankaTaskEnvCfg):
         self.dynamic_reset_gripper_effort_limit = False
 
         self.scene.robot.init_state.pos = (9.0, 6.0, 0.9)
-        self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, 0.707)
+        self.scene.robot.init_state.rot = (0.0, 0.0, 0.707, 0.707)
         self.scene.robot.init_state.joint_pos = {
             "panda_joint1": 0.0,
             "panda_joint2": -math.pi / 4.0,
@@ -120,7 +120,7 @@ class CupStackingEvalEnvCfg(SingleArmFrankaTaskEnvCfg):
         }
 
         self.scene.front.offset.pos = (7.80362, 6.78599, 1.1197)
-        self.scene.front.offset.rot = (0.37025, 0.37025, -0.60242, -0.60242)
+        self.scene.front.offset.rot = (0.37025, -0.60242, -0.60242, 0.37025)
         self.scene.front.offset.convention = "opengl"
         self.scene.front.spawn.focal_length = 18.14756
 

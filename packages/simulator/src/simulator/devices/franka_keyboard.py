@@ -119,20 +119,22 @@ class FrankaKeyboard(Device):
 
     def _ee_pose_b(self):
         """Current ee pose expressed in the robot base frame."""
-        ee_pos_w = self.robot_asset.data.body_pos_w[:, self._body_idx]
-        ee_quat_w = self.robot_asset.data.body_quat_w[:, self._body_idx]
-        root_pos_w = self.robot_asset.data.root_pos_w
-        root_quat_w = self.robot_asset.data.root_quat_w
+        ee_pos_w = self.robot_asset.data.body_pos_w.torch[:, self._body_idx]
+        ee_quat_w = self.robot_asset.data.body_quat_w.torch[:, self._body_idx]
+        root_pos_w = self.robot_asset.data.root_pos_w.torch
+        root_quat_w = self.robot_asset.data.root_quat_w.torch
         return math_utils.subtract_frame_transforms(
             root_pos_w, root_quat_w, ee_pos_w, ee_quat_w
         )
 
     def _jacobian_b(self):
         """Arm jacobian rotated from world into the robot base frame."""
-        jac_w = self.robot_asset.root_physx_view.get_jacobians()[
+        # Isaac Lab 3.x: root_physx_view is deprecated (and backend specific); the link-origin Jacobian is exposed
+        # through the articulation data, with the same body/joint indexing conventions as before.
+        jac_w = self.robot_asset.data.body_link_jacobian_w.torch[
             :, self._jacobi_body_idx, :, self._jacobi_joint_ids
         ]
-        root_quat_w = self.robot_asset.data.root_quat_w
+        root_quat_w = self.robot_asset.data.root_quat_w.torch
         base_R = math_utils.matrix_from_quat(math_utils.quat_inv(root_quat_w))
         jac_b = jac_w.clone()
         jac_b[:, :3, :] = torch.bmm(base_R, jac_b[:, :3, :])
@@ -212,7 +214,7 @@ class FrankaKeyboard(Device):
         command = torch.cat([self._target_pos_b, self._target_quat_b], dim=-1)
         self._ik.set_command(command)
 
-        joint_pos = self.robot_asset.data.joint_pos[:, self._arm_joint_ids]
+        joint_pos = self.robot_asset.data.joint_pos.torch[:, self._arm_joint_ids]
         joint_pos_des = self._ik.compute(
             ee_pos_b, ee_quat_b, self._jacobian_b(), joint_pos
         )

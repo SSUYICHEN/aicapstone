@@ -15,6 +15,8 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import FrameTransformerCfg, OffsetCfg, TiledCameraCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.datasets.episode_data import EpisodeData
+from isaaclab_physx.physics import PhysxCfg
+from isaaclab_tasks.utils.presets import set_isaac_rtx_global_settings
 
 from leisaac.devices.action_process import preprocess_device_action as preprocess_device_action_common
 from leisaac.enhance.datasets.lerobot_dataset_handler import LeRobotDatasetCfg
@@ -70,7 +72,7 @@ class SingleArmFrankaTaskSceneCfg(InteractiveSceneCfg):
 
     wrist: TiledCameraCfg = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_hand/wrist",
-        offset=TiledCameraCfg.OffsetCfg(pos=(0.04, 0.0, 0.0), rot=(0.707, 0, 0, 0.707), convention="ros"),
+        offset=TiledCameraCfg.OffsetCfg(pos=(0.04, 0.0, 0.0), rot=(0, 0, 0.707, 0.707), convention="ros"),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24,
@@ -98,7 +100,7 @@ class SingleArmFrankaTaskSceneCfg(InteractiveSceneCfg):
     front: TiledCameraCfg = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/front_camera",
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.35, 1.1, 0.6), rot=(0.0, -0.0, -0.60182, -0.79864), convention="opengl"
+            pos=(0.35, 1.1, 0.6), rot=(-0.0, -0.60182, -0.79864, 0.0), convention="opengl"
         ),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
@@ -182,9 +184,11 @@ class SingleArmFrankaTaskEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 15
         self.viewer.eye = (1.4, -0.9, 1.2)
         self.viewer.lookat = (2.0, -0.5, 1.0)
-        self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.friction_correlation_distance = 0.00625
-        self.sim.render.enable_translucency = True
+        # Isaac Lab 3.x: SimulationCfg.physx was replaced by SimulationCfg.physics (PhysX stays the default backend)
+        # and SimulationCfg.render was removed (RTX settings live in each camera's renderer_cfg).
+        self.sim.physics = PhysxCfg(bounce_threshold_velocity=0.01, friction_correlation_distance=0.00625)
+        for _camera_cfg in (self.scene.wrist, self.scene.front):
+            set_isaac_rtx_global_settings(_camera_cfg.renderer_cfg, enable_translucency=True)
         self.default_feature_joint_names = [f"{joint_name}.pos" for joint_name in FRANKA_JOINT_NAMES]
 
     def use_teleop_device(self, teleop_device) -> None:

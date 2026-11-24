@@ -130,6 +130,9 @@ parser.add_argument(
 )
 
 AppLauncher.add_app_launcher_args(parser)
+# Isaac Lab 3.0's AppLauncher no longer defines --enable_cameras but still uses it to load the RTX renderer.
+# All HCIS tasks use cameras, so it is on by default (the flag is still accepted).
+parser.add_argument("--enable_cameras", action="store_true", default=True, help="Enable camera rendering.")
 args_cli = parser.parse_args()
 
 app_launcher = AppLauncher(vars(args_cli))

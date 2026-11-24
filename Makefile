@@ -1,6 +1,7 @@
 .PHONY: install install-dev test \
 	submodules submodules-pull \
 	build-isaaclab launch-isaaclab \
+	build-isaaclab6 launch-isaaclab6 \
 	launch-isaaclab-glowsai-4090 launch-isaaclab-glowsai-l40s \
 	check-isaaclab-gpu
 
@@ -91,6 +92,48 @@ launch-isaaclab: build-isaaclab
 			echo "== GPU check =="; nvidia-smi || true; \
 			echo "== Vulkan ICD candidates =="; \
 			ls -l /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null || true; \
+			$(select_vulkan_icd); \
+			$(require_runtime_libs); \
+			cd /workspace/aicapstone; \
+			exec /bin/bash \
+		'
+
+# ---- Isaac Sim 6.2 / Isaac Lab 3.0 (separate image; does not touch the targets above) ---------------
+IMAGE6          ?= leisaac-isaaclab:6.0
+DOCKERFILE6     ?= Dockerfile.isaac6
+CONTAINER_NAME6 ?= isaaclab6
+
+# Needs no git submodule: Isaac Lab 3.0 is installed from the `isaaclab==3.0.0` PyPI wheel.
+build-isaaclab6:
+	docker build -f $(DOCKERFILE6) -t $(IMAGE6) .
+
+launch-isaaclab6: build-isaaclab6
+	@set -e; \
+	xhost +local:root >/dev/null || true; \
+	trap 'xhost -local:root >/dev/null || true' EXIT; \
+	docker run --rm -it \
+		--name $(CONTAINER_NAME6) \
+		--gpus '"device=$(GPU)"' \
+		--net=host \
+		--ipc=host \
+		--ulimit memlock=-1 \
+		--ulimit stack=67108864 \
+		--shm-size=16g \
+		-v $(shell pwd):/workspace/aicapstone \
+		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+		-v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro \
+		-v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro \
+		-e DISPLAY=$$DISPLAY \
+		-e OMNI_KIT_ACCEPT_EULA=Y \
+		-e PRIVACY_CONSENT=Y \
+		-e QT_X11_NO_MITSHM=1 \
+		-e WARN_ON_TORCH_QUATF_ACCESS=1 \
+		-e NVIDIA_VISIBLE_DEVICES=$(GPU) \
+		-e NVIDIA_DRIVER_CAPABILITIES=graphics,display,utility,compute \
+		$(IMAGE6) \
+		bash -lc '\
+			set -e; \
+			echo "== GPU check =="; nvidia-smi || true; \
 			$(select_vulkan_icd); \
 			$(require_runtime_libs); \
 			cd /workspace/aicapstone; \

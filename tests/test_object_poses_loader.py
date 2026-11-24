@@ -48,7 +48,7 @@ def test_identity_anchor_passthrough_positions():
     assert set(out) == {"blue_cup", "pink_cup"}
     blue_pos, blue_quat = out["blue_cup"]
     assert blue_pos == pytest.approx((0.36, -0.4, 0.12))
-    assert blue_quat == pytest.approx((1.0, 0.0, 0.0, 0.0))
+    assert blue_quat == pytest.approx((0.0, 0.0, 0.0, 1.0))
 
 
 def test_anchor_entry_in_objects_is_skipped():
@@ -109,9 +109,9 @@ def test_yaw_composes_anchor_and_object():
         ],
     })
     _, q = load_object_poses(path, cfg)["blue_cup"]
-    # quaternion for yaw = pi/2 (roll=pitch=0): (cos(pi/4), 0, 0, sin(pi/4))
+    # quaternion (x, y, z, w) for yaw = pi/2 (roll=pitch=0): (0, 0, sin(pi/4), cos(pi/4))
     assert q == pytest.approx(
-        (math.cos(math.pi / 4.0), 0.0, 0.0, math.sin(math.pi / 4.0)), abs=1e-9
+        (0.0, 0.0, math.sin(math.pi / 4.0), math.cos(math.pi / 4.0)), abs=1e-9
     )
 
 
@@ -130,7 +130,7 @@ def test_fixed_z_and_roll_pitch_applied():
         # Quaternion should be unit-norm.
         assert sum(c * c for c in quat) == pytest.approx(1.0)
         # Non-zero roll/pitch should yield a non-identity quaternion.
-        assert quat[0] != pytest.approx(1.0)
+        assert quat[3] != pytest.approx(1.0)
 
 
 # --- Error reporting: malformed JSON / missing tags / anchor mismatch ---

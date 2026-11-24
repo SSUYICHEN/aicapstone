@@ -20,8 +20,8 @@ def task_done(
     blue_cup: RigidObject = env.scene[blue_cup_cfg.name]
     pink_cup: RigidObject = env.scene[pink_cup_cfg.name]
 
-    blue_cup_pos = blue_cup.data.root_pos_w - env.scene.env_origins
-    pink_cup_pos = pink_cup.data.root_pos_w - env.scene.env_origins
+    blue_cup_pos = blue_cup.data.root_pos_w.torch - env.scene.env_origins
+    pink_cup_pos = pink_cup.data.root_pos_w.torch - env.scene.env_origins
 
     done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
     done = torch.logical_and(done, blue_cup_pos[:, 0] < pink_cup_pos[:, 0] + x_range[1])

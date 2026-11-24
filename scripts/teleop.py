@@ -74,6 +74,9 @@ parser.add_argument("--lerobot_dataset_fps", type=int, default=30, help="Lerobot
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
+# Isaac Lab 3.0's AppLauncher no longer defines --enable_cameras but still uses it to load the RTX renderer.
+# All HCIS tasks use cameras, so it is on by default (the flag is still accepted).
+parser.add_argument("--enable_cameras", action="store_true", default=True, help="Enable camera rendering.")
 # parse the arguments
 args_cli = parser.parse_args()
 
@@ -99,6 +102,7 @@ import torch
 from isaaclab.envs import DirectRLEnv, ManagerBasedRLEnv
 from isaaclab.managers import DatasetExportMode, TerminationTermCfg
 from isaaclab_tasks.utils import parse_env_cfg
+from isaaclab_tasks.utils.presets import set_isaac_rtx_global_settings
 from leisaac.enhance.managers import EnhanceDatasetExportMode, StreamingRecorderManager
 from leisaac.utils.env_utils import dynamic_reset_gripper_effort_limit_sim
 
@@ -158,8 +162,8 @@ def _apply_episode_poses(env, poses):
             device=device,
             dtype=torch.float32,
         ).repeat(env.num_envs, 1)
-        obj.write_root_pose_to_sim(pose_tensor)
-        w, x, y, z = quat
+        obj.write_root_pose_to_sim_index(root_pose=pose_tensor)
+        x, y, z, w = quat  # Isaac Lab 3.x quaternion order is (x, y, z, w)
         yaw_deg = _math.degrees(_math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
         print(
             f"  [pose] {name}: pos=({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) "
@@ -198,8 +202,12 @@ def main():  # noqa: C901
         print(f"Loaded {len(episodes)} replay episodes from {args_cli.object_poses}")
 
     if args_cli.quality:
-        env_cfg.sim.render.antialiasing_mode = "FXAA"
-        env_cfg.sim.render.rendering_mode = "quality"
+        # Isaac Lab 3.x removed ``env_cfg.sim.render``: RTX settings now live in the cameras' ``renderer_cfg``.
+        # (The old ``rendering_mode = "quality"`` has no equivalent; only anti-aliasing is applied.)
+        for camera_name in ("wrist", "front"):
+            camera_cfg = getattr(env_cfg.scene, camera_name, None)
+            if camera_cfg is not None:
+                set_isaac_rtx_global_settings(camera_cfg.renderer_cfg, antialiasing_mode="FXAA")
 
     # precheck task and teleop device
     if "BiArm" in task_name:

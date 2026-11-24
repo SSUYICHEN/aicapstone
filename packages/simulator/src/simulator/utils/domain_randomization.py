@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBase
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
@@ -37,7 +38,8 @@ def _randomize_domelight(
     asset_cfg: SceneEntityCfg = SceneEntityCfg("light"),
 ):
     asset: AssetBase = env.scene[asset_cfg.name]
-    light_prim = asset.prims[0]
+    # Isaac Lab 3.x: AssetBase has no ``prims`` attribute any more.
+    light_prim = sim_utils.find_matching_prims(asset.cfg.prim_path)[0]
 
     new_intensity = random.uniform(intensity_range[0], intensity_range[1])
     light_prim.GetAttribute("inputs:intensity").Set(new_intensity)
