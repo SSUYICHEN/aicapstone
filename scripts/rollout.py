@@ -111,13 +111,38 @@ parser.add_argument(
 parser.add_argument(
     "--policy_checkpoint_path",
     type=str,
-    required=True,
-    help="Path to the local LeRobot checkpoint.",
+    default=None,
+    help="Path to the local LeRobot checkpoint (required unless --policy_server is given).",
+)
+parser.add_argument(
+    "--policy_server",
+    type=str,
+    default=None,
+    help=(
+        "HOST:PORT of a running scripts/policy_server.py. When set, the policy runs in that process (typically on"
+        " the host, in the environment it was trained in) instead of inside this container. Needed for policies whose"
+        " dependencies cannot be installed next to Isaac Lab, e.g. GR00T."
+    ),
 )
 parser.add_argument(
     "--debug_policy_shapes",
     action="store_true",
     help="Print observation and action tensor shapes around each local LeRobot inference call.",
+)
+parser.add_argument(
+    "--save_video_dir",
+    type=str,
+    default=None,
+    help=(
+        "If set, save the front/wrist camera observations of every evaluated episode as mp4 files in this directory"
+        " (file name: ep<idx>_<camera>_<success|fail>.mp4). Off by default."
+    ),
+)
+parser.add_argument(
+    "--video_stride",
+    type=int,
+    default=2,
+    help="Keep every N-th environment step when saving videos (reduces memory use). Default: 2.",
 )
 parser.add_argument(
     "--num_envs",
@@ -130,10 +155,21 @@ parser.add_argument(
 )
 
 AppLauncher.add_app_launcher_args(parser)
-# Isaac Lab 3.0's AppLauncher no longer defines --enable_cameras but still uses it to load the RTX renderer.
-# All HCIS tasks use cameras, so it is on by default (the flag is still accepted).
-parser.add_argument("--enable_cameras", action="store_true", default=True, help="Enable camera rendering.")
+# Isaac Lab 3.0's launcher no longer defines --enable_cameras. It picks the Kit experience (with or without the RTX
+# renderer) from this setting, and only auto-detects cameras for the new launch_simulation(cfg, ...) API, not for the
+# deprecated AppLauncher used here. All HCIS tasks use cameras, so always enable them; the flag is still accepted.
+try:
+    parser.add_argument(
+        "--enable_cameras",
+        action="store_true",
+        default=True,
+        help="Enable camera rendering (always on: all HCIS tasks use cameras). Kept for backward compatibility.",
+    )
+except argparse.ArgumentError:
+    pass
 args_cli = parser.parse_args()
+if not args_cli.policy_server and not args_cli.policy_checkpoint_path:
+    parser.error("--policy_checkpoint_path is required unless --policy_server is given")
 
 app_launcher = AppLauncher(vars(args_cli))
 simulation_app = app_launcher.app
@@ -477,6 +513,38 @@ class LeRobotSyncPolicy:
         return torch.from_numpy(actions)
 
 
+class RemoteLeRobotPolicy:
+    """Policy that runs in another process (scripts/policy_server.py). Same interface as LeRobotSyncPolicy."""
+
+    def __init__(
+        self,
+        address: str,
+        task_type: str,
+        camera_infos: dict[str, tuple[int, int]],
+        actions_per_chunk: int,
+    ):
+        from simulator.policy_service.client import RemotePolicyClient
+
+        host, _, port = address.rpartition(":")
+        if not host or not port.isdigit():
+            raise ValueError(f"--policy_server must look like HOST:PORT, got '{address}'")
+        print(f"[rollout] connecting to policy server {address} ...", flush=True)
+        self.camera_keys = list(camera_infos.keys())
+        self.client = RemotePolicyClient(host, int(port))
+        self.client.setup(camera_infos, task_type, actions_per_chunk)
+        print("[rollout] remote policy is ready.", flush=True)
+
+    def reset(self):
+        self.client.reset()
+
+    def get_action(self, observation_dict: dict) -> torch.Tensor:
+        images = {key: observation_dict[key].cpu().numpy().astype(np.uint8) for key in self.camera_keys}
+        joint_pos = observation_dict["joint_pos"].cpu().numpy()
+        actions = self.client.act(images, joint_pos, observation_dict["task_description"])
+        # actions: (num_envs, action_dim) - one action per env for this step.
+        return torch.from_numpy(actions)
+
+
 def preprocess_obs_dict(obs_dict: dict, language_instruction: str):
     obs_dict["task_description"] = language_instruction
     return obs_dict
@@ -499,6 +567,26 @@ def get_camera_infos(
         if isinstance(sensor, Camera) and key in policy_obs_dict:
             camera_infos[key] = sensor.image_shape
     return camera_infos
+
+
+def _write_episode_video(frames: list, path: str, fps: int) -> None:
+    """Encode a list of (H, W, 3) uint8 RGB frames as an mp4 file (opt-in debugging aid, see --save_video_dir)."""
+    import av
+
+    def _encode(codec: str) -> None:
+        with av.open(path, "w") as container:
+            stream = container.add_stream(codec, rate=fps)
+            stream.height, stream.width, stream.pix_fmt = frames[0].shape[0], frames[0].shape[1], "yuv420p"
+            for frame in frames:
+                for packet in stream.encode(av.VideoFrame.from_ndarray(np.ascontiguousarray(frame), format="rgb24")):
+                    container.mux(packet)
+            for packet in stream.encode():
+                container.mux(packet)
+
+    try:
+        _encode("libx264")
+    except Exception:  # noqa: BLE001 - fall back to a codec that is always available in PyAV
+        _encode("mpeg4")
 
 
 def main():
@@ -553,15 +641,23 @@ def main():
         flush=True,
     )
 
-    policy = LeRobotSyncPolicy(
-        policy_type=get_policy_type(args_cli.policy_type),
-        pretrained_name_or_path=args_cli.policy_checkpoint_path,
-        task_type=policy_task_type,
-        camera_infos=camera_infos,
-        actions_per_chunk=args_cli.policy_action_horizon,
-        device=args_cli.device,
-        debug_policy_shapes=args_cli.debug_policy_shapes,
-    )
+    if args_cli.policy_server:
+        policy = RemoteLeRobotPolicy(
+            address=args_cli.policy_server,
+            task_type=policy_task_type,
+            camera_infos=camera_infos,
+            actions_per_chunk=args_cli.policy_action_horizon,
+        )
+    else:
+        policy = LeRobotSyncPolicy(
+            policy_type=get_policy_type(args_cli.policy_type),
+            pretrained_name_or_path=args_cli.policy_checkpoint_path,
+            task_type=policy_task_type,
+            camera_infos=camera_infos,
+            actions_per_chunk=args_cli.policy_action_horizon,
+            device=args_cli.device,
+            debug_policy_shapes=args_cli.debug_policy_shapes,
+        )
 
     rate_limiter = RateLimiter(args_cli.step_hz)
     controller = Controller()
@@ -578,6 +674,10 @@ def main():
     # and ignore any further activity until the round ends.
     num_envs = env.num_envs
     success_count, episodes_done = 0, 0
+    video_cameras = ("front", "wrist")
+    if args_cli.save_video_dir:
+        _Path(args_cli.save_video_dir).mkdir(parents=True, exist_ok=True)
+        video_fps = max(1, int(round(1.0 / env.step_dt / args_cli.video_stride)))
     while simulation_app.is_running():
         if max_episode_count > 0 and episodes_done >= max_episode_count:
             break
@@ -598,12 +698,23 @@ def main():
         controller.reset()
         done_mask = torch.zeros(num_envs, dtype=torch.bool, device=env.device)
         success_mask = torch.zeros(num_envs, dtype=torch.bool, device=env.device)
+        video_frames = {(e, c): [] for e in range(num_envs) for c in video_cameras} if args_cli.save_video_dir else None
+        video_step = 0
 
         while simulation_app.is_running():
             with torch.inference_mode():
                 if controller.reset_state:
                     controller.reset()
                     break
+
+                if video_frames is not None and video_step % args_cli.video_stride == 0:
+                    for e in range(num_envs):
+                        if bool(done_mask[e]):
+                            continue  # frames after an env's first termination belong to the auto-reset episode
+                        for c in video_cameras:
+                            if c in obs_dict["policy"]:
+                                video_frames[(e, c)].append(obs_dict["policy"][c][e].cpu().numpy())
+                video_step += 1
 
                 policy_obs_dict = preprocess_obs_dict(
                     obs_dict["policy"], language_instruction
@@ -623,6 +734,16 @@ def main():
                     rate_limiter.sleep(env)
 
         round_success = int(success_mask[:batch].sum().item())
+        if video_frames is not None:
+            for e in range(batch):
+                outcome = "success" if bool(success_mask[e]) else "fail"
+                for c in video_cameras:
+                    if video_frames[(e, c)]:
+                        video_path = str(
+                            _Path(args_cli.save_video_dir) / f"ep{episodes_done + e + 1:03d}_{c}_{outcome}.mp4"
+                        )
+                        _write_episode_video(video_frames[(e, c)], video_path, video_fps)
+                        print(f"[rollout] saved {video_path} ({len(video_frames[(e, c)])} frames)", flush=True)
         success_count += round_success
         episodes_done += batch
         print(

@@ -1,4 +1,4 @@
-.PHONY: install install-dev test \
+.PHONY: install install-dev install-groot test \
 	submodules submodules-pull \
 	build-isaaclab launch-isaaclab \
 	build-isaaclab6 launch-isaaclab6 \
@@ -53,6 +53,10 @@ install: submodules
 
 install-dev: submodules
 	uv sync --extra dev
+
+# Pinned environment for training / serving GR00T (separate from .venv, see isaaclab3.0.md)
+install-groot:
+	bash scripts/setup_groot_env.sh
 
 test:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --extra dev pytest \
